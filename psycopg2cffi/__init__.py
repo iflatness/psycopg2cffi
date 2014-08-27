@@ -10,7 +10,7 @@ from psycopg2cffi._impl.connection import _connect
 from psycopg2cffi._impl.exceptions import *
 from psycopg2cffi._impl.typecasts import BINARY, DATETIME, NUMBER, ROWID, STRING
 
-__version__ = '2.5.0'
+__version__ = '2.5.3'
 apilevel = '2.0'
 paramstyle = 'pyformat'
 threadsafety = 2
@@ -92,7 +92,7 @@ def connect(dsn=None,
     if port is not None:
         items.append(('port', port))
 
-    items.extend([(k, v) for (k, v) in kwargs.iteritems() if v is not None])
+    items.extend([(k, v) for (k, v) in kwargs.items() if v is not None])
 
     if dsn is not None and items:
         raise TypeError(

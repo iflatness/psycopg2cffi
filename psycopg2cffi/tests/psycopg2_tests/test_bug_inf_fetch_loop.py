@@ -4,8 +4,8 @@
 # result size exceeds cursor.itersize
 
 import psycopg2
-from testconfig import dsn
-from testutils import unittest
+from .testconfig import dsn
+from .testutils import unittest
 
 
 class CursorTests(unittest.TestCase):
@@ -23,12 +23,13 @@ class CursorTests(unittest.TestCase):
         curs.itersize = 10
         curs.execute('create table inf_fetch_loop (id integer)')
 
-        for i in xrange(curs.itersize * 2):
+        for i in range(curs.itersize * 2):
             curs.execute('insert into inf_fetch_loop values (%s)', (2 * i,))
 
         curs.execute('select * from inf_fetch_loop')
         result = [(curs.rownumber, row) for row in curs]
-        self.assertEqual(result, [(1 + i % curs.itersize, (2 * i,)) 
-            for i in xrange(curs.itersize * 2)])
+        # TODO: This FAILS under normal postgres
+        self.assertEqual(result, [(1 + i % curs.itersize, (2 * i,))
+            for i in range(curs.itersize * 2)])
 
 

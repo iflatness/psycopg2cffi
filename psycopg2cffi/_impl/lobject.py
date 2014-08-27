@@ -34,6 +34,8 @@ class LargeObject(object):
         self._mode = self._parse_mode(mode)
         self._smode = mode
         self._new_oid = new_oid
+        if new_file and not isinstance(new_file, bytes):
+            new_file = new_file.encode(self._conn._py_enc)
         self._new_file = new_file
         self._fd = -1
         self._mark = conn._mark
@@ -60,6 +62,7 @@ class LargeObject(object):
             end = self.seek(0, os.SEEK_END)
             self.seek(where, os.SEEK_SET)
             size = end - where
+            print(size, end, where)
 
         if size == 0:
             return ''
@@ -70,15 +73,21 @@ class LargeObject(object):
             return
 
         if self._mode & consts.LOBJECT_BINARY:
-            return ffi.buffer(buf, length)[:]
+            val = ffi.buffer(buf, length)[:]
         else:
-            return ffi.string(buf).decode(self._conn._py_enc)
+            val = ffi.string(buf)
+            if len(val) < length:
+                val += b'\x00' * (length - len(val))
+            if (not isinstance(val, str) or (self._mode & consts.LOBJECT_TEXT)):
+                val = val.decode(self._conn._py_enc)[:length]
+        print(val, length, size)
+        return val
 
     @check_closed
     @check_unmarked
     def write(self, value):
         """Write a string to the large object."""
-        if isinstance(value, unicode):
+        if not isinstance(value, bytes):
             value = value.encode(self._conn._py_enc)
         length = libpq.lo_write(
             self._conn._pgconn, self._fd, value, len(value))
@@ -89,6 +98,8 @@ class LargeObject(object):
     def export(self, file_name):
         """Export large object to given file."""
         self._conn._begin_transaction()
+        if not isinstance(file_name, bytes):
+            file_name = file_name.encode(self._conn._py_enc)
         if libpq.lo_export(self._conn._pgconn, self._oid, file_name) < 0:
             raise self._conn._create_exception()
 
@@ -166,9 +177,9 @@ class LargeObject(object):
         """Convert a mode string to a mode int"""
         mode = 0
         pos = 0
-
+        
         if not smode:
-            return consts.LOBJECT_READ | consts.LOBJECT_BINARY
+            return consts.LOBJECT_READ
 
         if smode[0:2] == 'rw':
             mode |= consts.LOBJECT_READ | consts.LOBJECT_WRITE
@@ -194,9 +205,9 @@ class LargeObject(object):
                 pos += 1
             else:
                 mode |= consts.LOBJECT_BINARY
-        else:
-            mode |= consts.LOBJECT_BINARY
-
+        #else:
+        #    mode |= consts.LOBJECT_BINARY
+        
         if len(smode) != pos:
             raise ValueError("bad mode for lobject: '%s'", smode)
         return mode

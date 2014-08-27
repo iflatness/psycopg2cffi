@@ -34,7 +34,7 @@ This module holds all the extensions to the DBAPI-2.0 provided by psycopg.
 import sys as _sys
 
 from psycopg2cffi._impl import connection as _connection
-from psycopg2cffi._impl.adapters import adapt, adapters
+from psycopg2cffi._impl.adapters import adapt, adapters, b, s, u
 from psycopg2cffi._impl.adapters import Binary, Boolean, Int, Float
 from psycopg2cffi._impl.adapters import QuotedString, AsIs, ISQLQuote
 from psycopg2cffi._impl.connection import Connection as connection
@@ -61,14 +61,6 @@ from psycopg2cffi._impl.typecasts import DATETIME as PYDATETIME
 PYDATE = DATE
 PYTIME = TIME
 PYINTERVAL = INTERVAL
-
-# Return bytes from a string
-if _sys.version_info[0] < 3:
-    def b(s):
-        return s
-else:
-    def b(s):
-        return s.encode('utf8')
 
 def register_adapter(typ, callable):
     """Register 'callable' as an ISQLQuote adapter for type 'typ'."""

@@ -1,11 +1,11 @@
 from psycopg2cffi._impl.libpq import libpq, ffi
 
 
-class Warning(StandardError):
+class Warning(Exception):
     pass
 
 
-class Error(StandardError):
+class Error(Exception):
     pgerror = None
     pgcode = None
     cursor = None
@@ -87,7 +87,11 @@ class Diagnostics(object):
         if self._exc and self._exc._pgres:
             b = libpq.PQresultErrorField(self._exc._pgres, field)
             if b:
-                return ffi.string(b)
+                b = ffi.string(b)
+                if not isinstance(b, str):
+                    # Can't choose encoding :(
+                    b = b.decode()
+                return b
 
     @property
     def severity(self):

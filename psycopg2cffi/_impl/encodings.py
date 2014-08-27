@@ -76,11 +76,13 @@ encodings = {
 
 def normalize(name):
     """Normalize the name of an encoding."""
+    if isinstance(name, bytes):
+        name = name.decode()
     return name.replace('_', '').replace('-', '').upper()
 
 # Include a normalized version of the encodings above
 # (all uppercase, no - or _)
-for k, v in encodings.items():
+for k, v in list(encodings.items()):
     encodings[normalize(k)] = v
 
 del k, v

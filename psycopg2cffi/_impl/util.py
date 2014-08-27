@@ -1,6 +1,6 @@
 from psycopg2cffi._impl import exceptions
 from psycopg2cffi._impl.libpq import libpq
-from psycopg2cffi._impl.adapters import QuotedString
+from psycopg2cffi._impl.adapters import QuotedString, s
 
 
 def pq_set_non_blocking(pgconn, arg, raise_exception=False):
@@ -39,7 +39,7 @@ def pq_get_last_result(pgconn):
 def quote_string(conn, value):
     obj = QuotedString(value)
     obj.prepare(conn)
-    return obj.getquoted()
+    return s(obj.getquoted())
 
 
 def get_exception_for_sqlstate(code):

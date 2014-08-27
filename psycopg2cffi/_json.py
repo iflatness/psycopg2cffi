@@ -29,7 +29,7 @@ extensions importing register_json from extras.
 
 import sys
 
-from psycopg2cffi._impl.adapters import ISQLQuote, QuotedString
+from psycopg2cffi._impl.adapters import ISQLQuote, QuotedString, s
 from psycopg2cffi._impl.typecasts import new_type, new_array_type, register_type
 
 
@@ -149,10 +149,10 @@ def _create_json_typecasters(oid, array_oid, loads=None):
         else:
             loads = json.loads
 
-    def typecast_json(s, cur):
-        if s is None:
+    def typecast_json(si, cur):
+        if si is None:
             return None
-        return loads(s)
+        return loads(s(si))
 
     JSON = new_type((oid, ), 'JSON', typecast_json)
     if array_oid is not None:

@@ -1,6 +1,6 @@
 from collections import namedtuple
 from functools import wraps
-from io import TextIOBase
+from _io import _TextIOBase as TextIOBase
 import weakref
 
 from psycopg2cffi import tz
@@ -9,7 +9,7 @@ from psycopg2cffi._impl import exceptions
 from psycopg2cffi._impl.libpq import libpq, ffi
 from psycopg2cffi._impl import typecasts
 from psycopg2cffi._impl import util
-from psycopg2cffi._impl.adapters import _getquoted
+from psycopg2cffi._impl.adapters import _getquoted, s
 from psycopg2cffi._impl.exceptions import InterfaceError, ProgrammingError
 
 
@@ -229,8 +229,6 @@ class Cursor(object):
                 raise ProgrammingError(
                     "can't use a named cursor outside of transactions")
 
-        if isinstance(query, unicode):
-            query = query.encode(self._conn._py_enc)
 
         if parameters is not None:
             self._query = _combine_cmd_params(query, parameters, conn)
@@ -251,6 +249,9 @@ class Cursor(object):
                 self._withhold and "WITH" or "WITHOUT", # youuuuu
                 self._query)
 
+        if not isinstance(self._query, bytes):
+            self._query = self._query.encode(self._conn._py_enc)
+        
         self._pq_execute(self._query, conn._async)
 
 
@@ -347,7 +348,7 @@ class Cursor(object):
             return []
 
         rows = []
-        for i in xrange(size):
+        for i in range(size):
             rows.append(self._build_row(self._rownumber))
             self._rownumber += 1
         return rows
@@ -373,7 +374,7 @@ class Cursor(object):
             return []
 
         result = []
-        for row in xrange(size):
+        for row in range(size):
             result.append(self._build_row(self._rownumber))
             self._rownumber += 1
         return result
@@ -411,10 +412,13 @@ class Cursor(object):
         This is not part of the dbapi 2 standard, but a psycopg2 extension.
 
         """
-        if isinstance(query, unicode):
-            query = query.encode(self._conn._py_enc)
+        #if isinstance(query, str):
+        #    query = query.encode(self._conn._py_enc)
 
-        return _combine_cmd_params(query, vars, self._conn)
+        val = _combine_cmd_params(query, vars, self._conn)
+        if not isinstance(val, bytes):
+            val = val.encode(self._conn._py_enc)
+        return val
 
     @check_closed
     @check_async
@@ -684,6 +688,8 @@ class Cursor(object):
             if not async:
                 with self._conn._lock:
                     if not self._conn._have_wait_callback():
+                        if not isinstance(query, bytes):
+                            query = query.encode()
                         self._pgres = libpq.PQexec(pgconn, query)
                     else:
                         self._pgres = self._conn._execute_green(query)
@@ -694,6 +700,8 @@ class Cursor(object):
 
             else:
                 with self._conn._lock:
+                    if not isinstance(query, bytes):
+                        query = query.encode()
                     ret = libpq.PQsendQuery(pgconn, query)
                     if not ret:
 
@@ -719,7 +727,7 @@ class Cursor(object):
     def _pq_fetch(self):
         pgstatus = libpq.PQresultStatus(self._pgres)
         if pgstatus != libpq.PGRES_FATAL_ERROR:
-            self._statusmessage = ffi.string(libpq.PQcmdStatus(self._pgres))
+            self._statusmessage = ffi.string(libpq.PQcmdStatus(self._pgres)).decode()
         else:
             self._statusmessage = None
 
@@ -758,7 +766,7 @@ class Cursor(object):
             self._no_tuples = False
             description = []
             casts = []
-            for i in xrange(self._nfields):
+            for i in range(self._nfields):
                 ftype = libpq.PQftype(self._pgres, i)
                 fsize = libpq.PQfsize(self._pgres, i)
                 fmod = libpq.PQfmod(self._pgres, i)
@@ -781,7 +789,7 @@ class Cursor(object):
 
                 casts.append(self._get_cast(ftype))
                 description.append(Column(
-                    name=ffi.string(libpq.PQfname(self._pgres, i)),
+                    name=ffi.string(libpq.PQfname(self._pgres, i)).decode(),
                     type_code=ftype,
                     display_size=None,
                     internal_size=isize,
@@ -801,6 +809,8 @@ class Cursor(object):
             data = self._copyfile.read(size)
             if isinstance(self._copyfile, TextIOBase):
                 data = data.encode(self._conn._py_enc)
+            #if not isinstance(data, bytes):
+            #    data = data.encode(self._conn._py_enc)
 
             if not data:
                 break
@@ -853,7 +863,7 @@ class Cursor(object):
 
         # Fill it
         n = self._nfields
-        for i in xrange(n):
+        for i in range(n):
             if libpq.PQgetisnull(self._pgres, row_num, i):
                 row[i] = None
             else:
@@ -884,6 +894,8 @@ def _combine_cmd_params(cmd, params, conn):
 
     # Return when no argument binding is required.  Note that this method is
     # not called from .execute() if `params` is None.
+    cmd = s(cmd, conn.encoding)
+
     if '%' not in cmd:
         return cmd
 
@@ -926,7 +938,7 @@ def _combine_cmd_params(cmd, params, conn):
             if arg_values is None:
                 arg_values = {}
             if key not in arg_values:
-                arg_values[key] = _getquoted(params[key], conn)
+                arg_values[key] = s(_getquoted(params[key], conn), conn.encoding)
 
             check_format_char(cmd[end + 1], idx)
 
@@ -944,7 +956,7 @@ def _combine_cmd_params(cmd, params, conn):
             if arg_values is None:
                 arg_values = []
 
-            value = _getquoted(params[param_num], conn)
+            value = s(_getquoted(params[param_num], conn), conn.encoding)
             arg_values.append(value)
 
             param_num += 1
@@ -959,6 +971,6 @@ def _combine_cmd_params(cmd, params, conn):
         arg_values = tuple(arg_values)
 
     if not arg_values:
-        return cmd % tuple()  # Required to unescape % chars
+        return cmd.replace('%%', '%')  # Required to unescape % chars
     return cmd % arg_values
 

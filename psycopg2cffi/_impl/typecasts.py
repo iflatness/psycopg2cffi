@@ -1,4 +1,5 @@
 import re
+import sys
 import decimal
 import datetime
 from time import localtime
@@ -63,39 +64,66 @@ def typecast(caster, value, length, cursor):
 def parse_unknown(value, length, cursor):
     if value is None:
         return None
-
+    if not isinstance(value, str):
+        value = value.decode(cursor._conn._py_enc)
     return value if value != '{}' else []
 
 
 def parse_string(value, length, cursor):
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = value.decode(cursor._conn._py_enc)
     return value
 
 
 def parse_longinteger(value, length, cursor):
-    return long(value) if value is not None else None
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = value.decode(cursor._conn._py_enc)
+    return int(value)
 
 
 def parse_integer(value, length, cursor):
-    return int(value) if value is not None else None
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = value.decode(cursor._conn._py_enc)
+    return int(value)
 
 
 def parse_float(value, length, cursor):
-    return float(value) if value is not None else None
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = value.decode(cursor._conn._py_enc)
+    return float(value)
 
 
 def parse_decimal(value, length, cursor):
-    return decimal.Decimal(value) if value is not None else None
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = value.decode(cursor._conn._py_enc)
+    return decimal.Decimal(value)
 
 
 def parse_binary(value, length, cursor):
     if value is None:
         return None
+    if not isinstance(value, bytes):
+        value = value.encode(cursor._conn._py_enc)
 
     to_length = ffi.new('size_t *')
     s = libpq.PQunescapeBytea(
-            ffi.new('unsigned char[]', str(value)), to_length)
+            ffi.new('unsigned char[]', value), to_length)
     try:
-        res = buffer(ffi.buffer(s, to_length[0])[:])
+        if sys.version_info[0] < 3:
+            res = buffer(ffi.buffer(s, to_length[0])[:])
+        else:
+            #Bytearray?
+            res = memoryview(ffi.buffer(s, to_length[0])[:])
     finally:
         libpq.PQfreemem(s)
     return res
@@ -107,7 +135,11 @@ def parse_boolean(value, length, cursor):
     Postgres returns the boolean as a string with 'true' or 'false'
 
     """
-    return value[0] == "t" if value is not None else None
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = value.decode(cursor._conn._py_enc)
+    return value[0] == "t"
 
 
 class parse_array(object):
@@ -128,6 +160,8 @@ class parse_array(object):
     def cast(self, value, length, cursor):
         if value is None:
             return None
+        if not isinstance(value, str):
+            value = value.decode(cursor._conn._py_enc)
 
         s = value
         if not (len(s) >= 2 and  s[0] == "{" and s[-1] == "}"):
@@ -200,6 +234,10 @@ def _parse_time_to_args(value, cursor):
     The given value is in the format of `16:28:09.506488+01`
 
     """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = value.decode(cursor._conn._py_enc)
     hour, minute, second = value.split(':', 2)
 
     sign = 0
@@ -233,6 +271,8 @@ def _parse_time_to_args(value, cursor):
 def parse_datetime(value, length, cursor):
     if value is None:
         return None
+    if not isinstance(value, str):
+        value = value.decode(cursor._conn._py_enc)
     elif value == 'infinity':
         return datetime.datetime.max
     elif value == '-infinity':
@@ -255,6 +295,8 @@ def parse_datetime(value, length, cursor):
 def parse_date(value, length, cursor):
     if value is None:
         return None
+    if not isinstance(value, str):
+        value = value.decode(cursor._conn._py_enc)
     elif value == 'infinity':
         return datetime.date.max
     elif value == '-infinity':
@@ -271,6 +313,8 @@ def parse_date(value, length, cursor):
 def parse_time(value, length, cursor):
     if value is None:
         return None
+    if not isinstance(value, str):
+        value = value.decode(cursor._conn._py_enc)
 
     try:
         return datetime.time(*_parse_time_to_args(value, cursor))
@@ -295,6 +339,8 @@ def parse_interval(value, length, cursor):
     """
     if value is None:
         return None
+    if not isinstance(value, str):
+        value = value.decode(cursor._conn._py_enc)
 
     m = _re_interval.match(value)
     if not m:

@@ -23,7 +23,7 @@ _isolevels = {
     'default':         -1,
 }
 
-for k, v in _isolevels.items():
+for k, v in list(_isolevels.items()):
     _isolevels[v] = k
 
 del k, v
@@ -124,7 +124,7 @@ class Connection(object):
         self._notice_callback = ffi.callback(
             'void(void *, const char *)',
             lambda arg, message: self_ref()._process_notice(
-                arg, ffi.string(message)))
+                arg, ffi.string(message).decode()))
 
         if not self._async:
             self._connect_sync()
@@ -154,7 +154,7 @@ class Connection(object):
         of self._setup().
 
         """
-        self._pgconn = libpq.PQconnectStart(self.dsn)
+        self._pgconn = libpq.PQconnectStart(self.dsn.encode())
         if not self._pgconn:
             raise exceptions.OperationalError('PQconnectStart() failed')
         elif libpq.PQstatus(self._pgconn) == libpq.CONNECTION_BAD:
@@ -210,11 +210,13 @@ class Connection(object):
             if _green_callback:
                 pgres = self._execute_green(query)
             else:
+                if not isinstance(query, bytes):
+                    query = query.encode()
                 pgres = libpq.PQexec(self._pgconn, query)
 
             if not pgres or libpq.PQresultStatus(pgres) != libpq.PGRES_TUPLES_OK:
                 raise exceptions.OperationalError("can't fetch %s" % name)
-            rv = ffi.string(libpq.PQgetvalue(pgres, 0, 0))
+            rv = ffi.string(libpq.PQgetvalue(pgres, 0, 0)).decode()
             libpq.PQclear(pgres)
             return rv
 
@@ -229,7 +231,9 @@ class Connection(object):
 
         The string 'default' is accepted too.
         """
-        if isinstance(value, basestring) and value.lower() == 'default':
+        if isinstance(value, bytes) and not isinstance(value, str):
+            value = value.decode()
+        if isinstance(value, str) and value.lower() == 'default':
             value = 'default'
         else:
             value = value and 'on' or 'off'
@@ -268,8 +272,13 @@ class Connection(object):
                 if isolation_level < 1 or isolation_level > 4:
                     raise ValueError('isolation level must be between 1 and 4')
                 isolation_level = _isolevels[isolation_level]
-            elif isinstance(isolation_level, basestring):
+            elif isinstance(isolation_level, str):
                 isolation_level = isolation_level.lower()
+                if not isolation_level or isolation_level not in _isolevels:
+                    raise ValueError("bad value for isolation level: '%s'" %
+                        isolation_level)
+            elif isinstance(isolation_level, bytes):
+                isolation_level = isolation_level.decode().lower()
                 if not isolation_level or isolation_level not in _isolevels:
                     raise ValueError("bad value for isolation level: '%s'" %
                         isolation_level)
@@ -310,7 +319,7 @@ class Connection(object):
         return libpq.PQbackendPID(self._pgconn)
 
     def get_parameter_status(self, parameter):
-        p = libpq.PQparameterStatus(self._pgconn, parameter)
+        p = libpq.PQparameterStatus(self._pgconn, parameter.encode())
         return ffi.string(p) if p != ffi.NULL else None
 
     def get_transaction_status(self):
@@ -631,7 +640,7 @@ class Connection(object):
 
     def _begin_transaction(self):
         if self.status == consts.STATUS_READY and not self._autocommit:
-            self._execute_command('BEGIN')
+            self._execute_command(b'BEGIN')
             self.status = consts.STATUS_BEGIN
 
     def _execute_command(self, command):
@@ -639,6 +648,8 @@ class Connection(object):
             if _green_callback:
                 pgres = self._execute_green(command)
             else:
+                if not isinstance(command, bytes):
+                    command = command.encode()
                 pgres = libpq.PQexec(self._pgconn, command)
 
             if not pgres:
@@ -666,6 +677,8 @@ class Connection(object):
 
         self._async_cursor = True
 
+        if not isinstance(query, bytes):
+            query = query.encode(self.encoding)
         if not libpq.PQsendQuery(self._pgconn, query):
             self._async_cursor = None
             return
@@ -753,7 +766,7 @@ class Connection(object):
 
     def _get_equote(self):
         ret = libpq.PQparameterStatus(
-            self._pgconn, 'standard_conforming_strings')
+            self._pgconn, b'standard_conforming_strings')
         return ret and ffi.string(ret) == 'off' or False
 
     def _is_busy(self):
@@ -785,8 +798,8 @@ class Connection(object):
 
             notify = Notify(
                 pg_notify.be_pid,
-                ffi.string(pg_notify.relname),
-                ffi.string(pg_notify.extra))
+                ffi.string(pg_notify.relname).decode(),
+                ffi.string(pg_notify.extra).decode())
             self._notifies.append(notify)
 
             libpq.PQfreemem(pg_notify)
@@ -820,6 +833,8 @@ class Connection(object):
             code = libpq.PQresultErrorField(pgres, libpq.PG_DIAG_SQLSTATE)
             if code != ffi.NULL:
                 code = ffi.string(code)
+                if not isinstance(code, str):
+                    code = code.decode(self.encoding)
                 exc_type = util.get_exception_for_sqlstate(code)
             else:
                 code = None
@@ -828,6 +843,8 @@ class Connection(object):
         if not pgmsg:
             pgmsg = libpq.PQerrorMessage(self._pgconn)
             pgmsg = ffi.string(pgmsg) if pgmsg else None
+        if not isinstance(pgmsg, str):
+            pgmsg = pgmsg.decode(self.encoding)
 
         if msg is None and pgmsg:
             msg = pgmsg
@@ -854,9 +871,9 @@ class Connection(object):
     def _iso_compatible_datestyle(self):
         ''' Return whether connection DateStyle is ISO-compatible
         '''
-        datestyle = libpq.PQparameterStatus(self._pgconn, 'DateStyle')
+        datestyle = libpq.PQparameterStatus(self._pgconn, b'DateStyle')
         return datestyle != ffi.NULL and \
-                ffi.string(datestyle).startswith('ISO')
+                ffi.string(datestyle).startswith(b'ISO')
 
 
 def _connect(dsn, connection_factory=None, async=False):

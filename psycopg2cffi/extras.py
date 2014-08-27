@@ -40,7 +40,7 @@ from psycopg2cffi import extensions as _ext
 from psycopg2cffi.extensions import cursor as _cursor
 from psycopg2cffi.extensions import connection as _connection
 from psycopg2cffi.extensions import adapt as _A
-from psycopg2cffi.extensions import b
+from psycopg2cffi.extensions import b, s, u
 
 
 class DictCursorBase(_cursor):
@@ -88,16 +88,16 @@ class DictCursorBase(_cursor):
     def __iter__(self):
         if self._prefetch:
             res = super(DictCursorBase, self).__iter__()
-            first = res.next()
+            first = next(res)
         if self._query_executed:
             self._build_index()
         if not self._prefetch:
             res = super(DictCursorBase, self).__iter__()
-            first = res.next()
+            first = next(res)
 
         yield first
         while 1:
-            yield res.next()
+            yield next(res)
 
 
 class DictConnection(_connection):
@@ -150,13 +150,15 @@ class DictRow(list):
         list.__setitem__(self, x, v)
 
     def items(self):
-        return list(self.iteritems())
+        # TODO: Make this follow dict_items
+        for n, v in self._index.items():
+            yield n, list.__getitem__(self, v)
 
     def keys(self):
         return self._index.keys()
 
     def values(self):
-        return tuple(self[:])
+        return list.__iter__(self)
 
     def has_key(self, x):
         return x in self._index
@@ -167,18 +169,20 @@ class DictRow(list):
         except:
             return default
 
+    """
     def iteritems(self):
-        for n, v in self._index.iteritems():
+        for n, v in self._index.items():
             yield n, list.__getitem__(self, v)
 
     def iterkeys(self):
-        return self._index.iterkeys()
+        return iter(self._index.keys())
 
     def itervalues(self):
         return list.__iter__(self)
+    """
 
     def copy(self):
-        return dict(self.iteritems())
+        return dict(self.items())
 
     def __contains__(self, x):
         return x in self._index
@@ -189,13 +193,6 @@ class DictRow(list):
     def __setstate__(self, data):
         self[:] = data[0]
         self._index = data[1]
-
-    # drop the crusty Py2 methods
-    if _sys.version_info[0] > 2:
-        items = iteritems; del iteritems
-        keys = iterkeys; del iterkeys
-        values = itervalues; del itervalues
-        del has_key
 
 
 class RealDictConnection(_connection):
@@ -308,18 +305,18 @@ class NamedTupleCursor(_cursor):
         nt = self.Record
         if nt is None:
             nt = self.Record = self._make_nt()
-        return map(nt._make, ts)
+        return list(map(nt._make, ts))
 
     def fetchall(self):
         ts = super(NamedTupleCursor, self).fetchall()
         nt = self.Record
         if nt is None:
             nt = self.Record = self._make_nt()
-        return map(nt._make, ts)
+        return list(map(nt._make, ts))
 
     def __iter__(self):
         it = super(NamedTupleCursor, self).__iter__()
-        t = it.next()
+        t = next(it)
 
         nt = self.Record
         if nt is None:
@@ -328,11 +325,11 @@ class NamedTupleCursor(_cursor):
         yield nt._make(t)
 
         while 1:
-            yield nt._make(it.next())
+            yield nt._make(next(it))
 
     try:
         from collections import namedtuple
-    except ImportError, _exc:
+    except ImportError as _exc:
         def _make_nt(self):
             raise self._exc
     else:
@@ -481,7 +478,7 @@ def register_uuid(oids=None, conn_or_curs=None):
         oid2 = 2951
 
     _ext.UUID = _ext.new_type((oid1, ), "UUID",
-            lambda data, cursor: data and uuid.UUID(data) or None)
+            lambda data, cursor: data and uuid.UUID(s(data)) or None)
     _ext.UUIDARRAY = _ext.new_array_type((oid2,), "UUID[]", _ext.UUID)
 
     _ext.register_type(_ext.UUID, conn_or_curs)
@@ -502,10 +499,10 @@ class Inet(object):
     by passing an evil value to the initializer.
     """
     def __init__(self, addr):
-        self.addr = addr
+        self.addr = s(addr)
 
     def __repr__(self):
-        return "%s(%r)" % (self.__class__.__name__, self.addr)
+        return "%s(%r)" % (self.__class__.__name__, s(self.addr))
 
     def prepare(self, conn):
         self._conn = conn
@@ -521,7 +518,7 @@ class Inet(object):
             return self
 
     def __str__(self):
-        return str(self.addr)
+        return s(self.addr)
 
 def register_inet(oid=None, conn_or_curs=None):
     """Create the INET type and an Inet adapter.
@@ -620,7 +617,7 @@ class HstoreAdapter(object):
 
         adapt = _ext.adapt
         rv = []
-        for k, v in self.wrapped.iteritems():
+        for k, v in self.wrapped.items():
             k = adapt(k)
             k.prepare(self.conn)
             k = k.getquoted()
@@ -642,9 +639,9 @@ class HstoreAdapter(object):
         if not self.wrapped:
             return b("''::hstore")
 
-        k = _ext.adapt(self.wrapped.keys())
+        k = _ext.adapt(list(self.wrapped.keys()))
         k.prepare(self.conn)
-        v = _ext.adapt(self.wrapped.values())
+        v = _ext.adapt(list(self.wrapped.values()))
         v.prepare(self.conn)
         return b("hstore(") + k.getquoted() + b(", ") + v.getquoted() + b(")")
 
@@ -863,9 +860,10 @@ class CompositeCaster(object):
     _re_undouble = _re.compile(r'(["\\])\1')
 
     @classmethod
-    def tokenize(self, s):
+    def tokenize(self, si):
         rv = []
-        for m in self._re_tokenize.finditer(s):
+        si = s(si)
+        for m in self._re_tokenize.finditer(si):
             if m is None:
                 raise psycopg2.InterfaceError("can't parse type: %r" % s)
             if m.group(1) is not None:

@@ -27,7 +27,7 @@
 import re
 
 from psycopg2cffi._impl.exceptions import ProgrammingError, InterfaceError
-from psycopg2cffi.extensions import ISQLQuote, adapt, register_adapter, b
+from psycopg2cffi.extensions import ISQLQuote, adapt, register_adapter, b, s
 from psycopg2cffi.extensions import new_type, new_array_type, register_type
 
 class Range(object):
@@ -117,6 +117,9 @@ class Range(object):
 
         return True
 
+    def __bool__(self):
+        return self._bounds is not None
+
     def __nonzero__(self):
         return self._bounds is not None
 
@@ -131,12 +134,29 @@ class Range(object):
     def __hash__(self):
         return hash((self._lower, self._upper, self._bounds))
 
-    def __lt__(self, other):
-        raise TypeError(
-            'Range objects cannot be ordered; please refer to the PostgreSQL'
-            ' documentation to perform this operation in the database')
+    def __ge__(self, other):
+        if other._bounds is None:
+            return True
+        elif self._bounds is None:
+            return False
+        le = (((self._lower is None and other._lower is not None) or 
+               (self._lower < other._lower)) or 
+              ((self._lower == other._lower) and
+               (self._bounds[0] in (other._bounds[0], '['))))
+        ge = (((self._upper is None and other._upper is not None) or 
+               (self._upper > other._upper)) or 
+              ((self._upper == other._upper) and
+               (self._bounds[1] in (other._bounds[1], ']'))))
+        return le and ge
 
-    __le__ = __gt__ = __ge__ = __lt__
+    def __gt__(self, other):
+        return self.__ge__(other) and not self.__eq__(other)
+
+    def __le__(self, other):
+        return other.__ge__(self)
+
+    def __lt__(self, other):
+        return other.__gt__(self)
 
 
 def register_range(pgrange, pyrange, conn_or_curs, globally=False):
@@ -246,7 +266,7 @@ class RangeCaster(object):
         # an implementation detail and is not documented. It is currently used
         # for the numeric ranges.
         self.adapter = None
-        if isinstance(pgrange, basestring):
+        if isinstance(pgrange, (str, bytes)):
             self.adapter = type(pgrange, (RangeAdapter,), {})
             self.adapter.name = pgrange
         else:
@@ -262,7 +282,7 @@ class RangeCaster(object):
 
         self.range = None
         try:
-            if isinstance(pyrange, basestring):
+            if isinstance(pyrange, (str, bytes)):
                 self.range = type(pyrange, (Range,), {})
             if issubclass(pyrange, Range) and pyrange is not Range:
                 self.range = pyrange
@@ -345,14 +365,16 @@ where typname = %s and ns.nspname = %s;
 
     _re_undouble = re.compile(r'(["\\])\1')
 
-    def parse(self, s, cur=None):
-        if s is None:
+    def parse(self, si, cur=None):
+        if si is None:
             return None
 
-        if s == 'empty':
+        si = s(si)
+
+        if si == 'empty':
             return self.range(empty=True)
 
-        m = self._re_range.match(s)
+        m = self._re_range.match(si)
         if m is None:
             raise InterfaceError("failed to parse range: %s")
 

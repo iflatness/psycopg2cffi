@@ -30,8 +30,8 @@ from functools import wraps
 import psycopg2
 import psycopg2.extensions
 from psycopg2.extensions import b
-from testutils import unittest, decorate_all_tests, skip_if_tpc_disabled
-from testutils import ConnectingTestCase, skip_if_green
+from .testutils import unittest, decorate_all_tests, skip_if_tpc_disabled
+from .testutils import ConnectingTestCase, skip_if_green
 
 def skip_if_no_lo(f):
     @wraps(f)
@@ -176,15 +176,15 @@ class LargeObjectTests(LargeObjectTestCase):
 
     def test_read_text(self):
         lo = self.conn.lobject()
-        snowman = u"\u2603"
-        length = lo.write(u"some data " + snowman)
+        snowman = "\u2603"
+        length = lo.write("some data " + snowman)
         lo.close()
 
         lo = self.conn.lobject(lo.oid, "rt")
         x = lo.read(4)
         self.assertEqual(type(x), type(u''))
-        self.assertEqual(x, u"some")
-        self.assertEqual(lo.read(), u" data " + snowman)
+        self.assertEqual(x, "some")
+        self.assertEqual(lo.read(), " data " + snowman)
 
     def test_read_large(self):
         lo = self.conn.lobject()
@@ -196,7 +196,7 @@ class LargeObjectTests(LargeObjectTestCase):
         self.assertEqual(lo.read(4), "some")
         data1 = lo.read()
         # avoid dumping megacraps in the console in case of error
-        self.assert_(data == data1,
+        self.assertTrue(data == data1,
             "%r... != %r..." % (data[:100], data1[:100]))
 
     def test_seek_tell(self):
@@ -227,7 +227,7 @@ class LargeObjectTests(LargeObjectTestCase):
         # the object doesn't exist now, so we can't reopen it.
         self.assertRaises(psycopg2.OperationalError, self.conn.lobject, lo.oid)
         # And the object has been closed.
-        self.assertEquals(lo.closed, True)
+        self.assertEqual(lo.closed, True)
 
     def test_export(self):
         lo = self.conn.lobject()
